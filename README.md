@@ -4,16 +4,19 @@ Every morning it finds companies in Germany, Austria and Switzerland that are hi
 
 I built it for Secfix's GTM Engineer role, as a small version of what the job describes: pull from several sources, dedupe, enrich, score, write back to the CRM, tell a rep who to call and why, and keep it running when something breaks.
 
-## Latest run
+## Latest run (2026-11-07)
 
-<!-- TODO: fill this block from a real run. Do not write numbers that the run did not print. -->
-> TODO after the first real run: "N companies posted security roles across Adzuna and the Bundesagentur this week (M postings, K of them found on both). After dedupe and enrichment, X are in HubSpot. Cost of the run: $C."
+Adzuna returned 1,462 postings for the ISO 27001 / TISAX / NIS2 / ISMS queries. 611 of them have a security-role title, from 276 distinct companies once obvious recruiters are dropped. The free LLM tier limits how many companies I can enrich per day, so the first run handled 5 and put them in HubSpot with a score, the reasons, evidence links and a brief; the daily cron works through the rest.
 
 | # | Company | Score | Why |
 |---|---|---|---|
-| TODO | from the Slack digest | | |
+| 1 | SAF-HOLLAND GmbH (safholland.com) | 100 | +30 hiring for a security role; +25 automotive supplier (TISAX need) |
+| 2 | Schwarz Digits (schwarz-digits.com) | 75 | +30 hiring for a security role; +20 likely NIS2-regulated (Digital infrastructure) |
+| 3 | adesso SE (adesso-group.de) | 75 | +30 hiring for a security role; +20 likely NIS2-regulated (Digital infrastructure) |
+| 4 | Bundesdruckerei-Gruppe (bundesdruckerei.de) | 75 | +30 hiring for a security role; +20 likely NIS2-regulated (Digital infrastructure) |
+| 5 | Korian Deutschland GmbH (korian.de) | 40 | +30 hiring for a security role; +10 six postings |
 
-Hand-checked precision of the top 10: TODO (see `eval/`).
+Not measured yet: precision of the top 10, and the Bundesagentur source (see Known gaps).
 
 ## How it works
 

@@ -97,6 +97,8 @@ LLM_MODEL = env("LLM_MODEL")
 LLM_MODEL_BRIEF = env("LLM_MODEL_BRIEF")  # optional stronger model for briefs
 # Free tiers allow only a few requests per minute. Seconds to wait between LLM calls.
 LLM_MIN_INTERVAL = float(env("LLM_MIN_INTERVAL", "0"))
+# Hard cap on LLM calls per run (0 = no cap). Protects free-tier daily quotas.
+LLM_MAX_CALLS = int(env("LLM_MAX_CALLS", "0"))
 
 
 def model_for(role: str) -> str:

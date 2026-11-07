@@ -41,6 +41,7 @@ jobs:
           LLM_MODEL: ${{ secrets.LLM_MODEL }}
           LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
           LLM_MIN_INTERVAL: "7"
+          LLM_MAX_CALLS: "30"   # free-tier daily quota guard
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           HUBSPOT_TOKEN: ${{ secrets.HUBSPOT_TOKEN }}
           HUBSPOT_PORTAL_ID: ${{ secrets.HUBSPOT_PORTAL_ID }}
@@ -49,4 +50,4 @@ jobs:
           OWNERS_SMB: ${{ secrets.OWNERS_SMB }}
           OWNERS_MID_MARKET: ${{ secrets.OWNERS_MID_MARKET }}
           OWNER_DEFAULT: ${{ secrets.OWNER_DEFAULT }}
-        run: python -m radar.main ${{ inputs.dry_run && '--dry-run' || '' }}
+        run: python -m radar.main --limit 15 ${{ inputs.dry_run && '--dry-run' || '' }}

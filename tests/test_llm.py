@@ -79,3 +79,18 @@ def test_model_for_roles(monkeypatch):
     assert config.model_for("brief") == "smart"
     monkeypatch.setattr(config, "LLM_PROVIDER", "anthropic")
     assert config.model_for("brief") == config.MODEL_BRIEF
+
+
+def test_call_budget_stops_the_run_with_a_quota_style_error(monkeypatch):
+    monkeypatch.setattr(config, "LLM_MIN_INTERVAL", 0.0)
+    monkeypatch.setattr(config, "LLM_MAX_CALLS", 2)
+    monkeypatch.setattr(http, "request", lambda *a, **k: compat_reply('{"a": "x", "tags": []}'))
+    client = llm.CompatClient("https://api.test/v1", "")
+    llm.reset_budget()
+    llm.ask_json(client, "m", "s", "p", SCHEMA)
+    llm.ask_json(client, "m", "s", "p", SCHEMA)
+    with pytest.raises(llm.LLMBudgetReached) as exc:
+        llm.ask_json(client, "m", "s", "p", SCHEMA)
+    assert exc.value.status == 429  # main treats it exactly like a provider quota
+    llm.reset_budget()
+    llm.ask_json(client, "m", "s", "p", SCHEMA)  # a new run starts with a fresh budget

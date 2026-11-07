@@ -15,6 +15,12 @@ class LLMRefused(Exception):
     pass
 
 
+class LLMBudgetReached(Exception):
+    """This run used up LLM_MAX_CALLS. Handled like a provider quota: stop cleanly, retry tomorrow."""
+
+    status = 429
+
+
 class LLMBadOutput(ValueError):
     """The model answered, but not with JSON that matches the schema."""
 
@@ -82,6 +88,12 @@ def conforms(value, schema: dict) -> bool:
 
 
 _last_call = 0.0
+_calls = 0
+
+
+def reset_budget() -> None:
+    global _calls
+    _calls = 0
 
 
 def _throttle() -> None:
@@ -123,6 +135,10 @@ def _ask_compat(client, model, system, prompt, schema):
 def ask_json(client, model: str, system: str, prompt: str, schema: dict, *,
              max_tokens: int = 4000, effort: str = "low") -> tuple[dict, float]:
     """Ask for JSON that matches schema. Returns (data, estimated_cost_usd). Raises if it doesn't conform."""
+    global _calls
+    if config.LLM_MAX_CALLS and _calls >= config.LLM_MAX_CALLS:
+        raise LLMBudgetReached(f"reached LLM_MAX_CALLS={config.LLM_MAX_CALLS} for this run")
+    _calls += 1
     _throttle()
     if isinstance(client, CompatClient):
         text, cost = _ask_compat(client, model, system, prompt, schema)

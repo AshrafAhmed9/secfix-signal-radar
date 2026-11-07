@@ -6,7 +6,8 @@ from radar import alerts, config, crm, db, enrich, http, main
 
 POSTING = {"posting_id": "1", "source": "adzuna", "company_name": "Acme GmbH", "title": "ISMS Manager",
            "location": "Berlin", "created": "2026-11-01T00:00:00Z", "url": "https://x/1", "query": "ISMS"}
-ENRICHMENT = {"industry": "Software", "employee_band": "50-249", "is_automotive_supplier": False,
+ENRICHMENT = {"industry": "Software", "employee_band": "50-249", "is_recruiting_agency": False,
+              "is_automotive_supplier": False,
               "sells_b2b": True, "already_certified": [], "nis2_sector": "none", "evidence": "x",
               "uses_competitor": False}
 
@@ -121,3 +122,24 @@ def test_stage_ingest_only_prints_counts(env, capsys):
     assert main.main(["--stage", "ingest"]) == 0
     out = capsys.readouterr().out
     assert "adzuna: 1 postings" in out and env["upserts"] == []
+
+
+def test_staffing_agencies_found_by_enrichment_are_excluded_and_not_retried(env, monkeypatch, tmp_path):
+    monkeypatch.setattr(main.enrich, "enrich", lambda *a, **k: ({**ENRICHMENT, "is_recruiting_agency": True}, 0.0))
+    assert main.main([]) == 0
+    assert env["upserts"] == []
+    conn = db.connect(str(tmp_path / "t.db"))
+    assert conn.execute("SELECT status FROM accounts").fetchone()["status"] == "excluded"
+    assert db.pending_domains(conn) == []
+
+
+def test_llm_quota_stops_the_run_cleanly_and_leaves_accounts_pending(env, monkeypatch, tmp_path):
+    def quota(*a, **k):
+        raise http.RequestFailed("quota", 429)
+
+    monkeypatch.setattr(main.enrich, "enrich", quota)
+    assert main.main([]) == 0
+    assert env["upserts"] == []  # nothing half-scored reaches HubSpot
+    assert last_run(tmp_path)["failed"] == 1  # one failure, not one per account
+    conn = db.connect(str(tmp_path / "t.db"))
+    assert db.pending_domains(conn) == ["acme.de"]  # tomorrow picks it up

@@ -16,19 +16,37 @@ SCHEMA = {
 }
 
 
-def name_in_page(normalized_name: str, page_text: str) -> bool:
-    """Guard against a confident wrong answer: the page must mention the company's first word."""
-    first_word = normalized_name.split()[0] if normalized_name.split() else ""
-    return len(first_word) >= 3 and first_word in page_text.lower()
+def name_in_page(normalized_name: str, page_text: str, strict: bool = False) -> bool:
+    """Guard against a confident wrong answer: the page must mention the company's name.
+
+    Lenient (for a domain the LLM named): the first word. Strict (for a domain we only guessed
+    from the name): every word, because a guess has nothing else backing it.
+    """
+    words = normalized_name.split()
+    if not words:
+        return False
+    text = page_text.lower()
+    if strict:
+        return len(normalized_name) >= 4 and all(w in text for w in words)
+    return len(words[0]) >= 3 and words[0] in text
 
 
-def verify(domain: str, normalized_name: str) -> bool:
+def guess_candidates(normalized_name: str) -> list[str]:
+    """Domains a company name might map to, tried before spending an LLM call. Free and checkable."""
+    words = normalized_name.split()
+    if not words or len(words) > 3 or not normalized_name.isascii():
+        return []
+    bases = list(dict.fromkeys(["".join(words), "-".join(words)]))
+    return [f"{base}.{tld}" for base in bases for tld in ("de", "com")]
+
+
+def verify(domain: str, normalized_name: str, strict: bool = False) -> bool:
     try:
         response = http.request("GET", f"https://{domain}", max_attempts=2, timeout=8.0,
                                 headers={"User-Agent": "secfix-signal-radar/0.1"})
     except http.RequestFailed:
         return False
-    return name_in_page(normalized_name, response.text)
+    return name_in_page(normalized_name, response.text, strict)
 
 
 def resolve_domain(conn, client, company_name: str, location: str, model: str) -> tuple[str | None, float]:
@@ -37,6 +55,11 @@ def resolve_domain(conn, client, company_name: str, location: str, model: str) -
     cached, domain = db.get_cached_domain(conn, normalized)
     if cached:
         return domain, 0.0
+    for candidate in guess_candidates(normalized):  # free check first
+        if verify(candidate, normalized, strict=True):
+            db.put_cached_domain(conn, normalized, candidate)
+            log("domain", "resolved", company=company_name, domain=candidate, how="guess")
+            return candidate, 0.0
     guess, cost = llm.ask_json(
         client, model,
         system="You give the official website domain of a company. Answer null when you are not sure; "

@@ -15,7 +15,12 @@ from radar.normalize import looks_like_agency, merge_by_domain, normalize_name
 
 # Failures of one account or one call must never crash the whole run.
 RECOVERABLE = (http.RequestFailed, enrich.EnrichmentFailed, anthropic.APIError,
-               llm.LLMRefused, llm.LLMBadOutput, json.JSONDecodeError)
+               llm.LLMRefused, llm.LLMBadOutput, llm.LLMBudgetReached, json.JSONDecodeError)
+
+
+def is_quota(exc: Exception) -> bool:
+    """429 from the LLM. Free tiers have daily quotas, and hammering them again just wastes minutes."""
+    return getattr(exc, "status", None) == 429 or getattr(exc, "status_code", None) == 429
 
 
 def parse_args(argv=None) -> argparse.Namespace:
@@ -69,7 +74,11 @@ def run(conn, args, c: dict, state: dict) -> None:
 
     state["stage"] = "domain"
     errored: set[str] = set()
+    quota_hit = False
     for normalized, plist in companies:
+        if quota_hit:
+            errored.add(normalized)  # untouched, so tomorrow retries it
+            continue
         try:
             found, cost = domain.resolve_domain(conn, client, plist[0]["company_name"],
                                                 plist[0]["location"], config.model_for("extract"))
@@ -77,6 +86,9 @@ def run(conn, args, c: dict, state: dict) -> None:
             errored.add(normalized)  # not marked seen, so tomorrow retries it
             c["failed"] += 1
             log("domain", "lookup failed", company=plist[0]["company_name"], error=str(exc))
+            if is_quota(exc):
+                quota_hit = True
+                log("domain", "LLM quota exhausted: stopping LLM calls for this run, the rest retry next run")
             continue
         c["cost"] += cost
         for p in plist:
@@ -100,15 +112,26 @@ def run(conn, args, c: dict, state: dict) -> None:
     state["stage"] = "enrich+score"
     scored = []
     for domain_name in work:
+        if quota_hit:
+            break  # the rest stay pending: never sync an account we could not enrich because of a quota
         account = db.load_account(conn, domain_name)
         enrichment, status = None, "synced"
         try:
             enrichment, cost = enrich.enrich(conn, client, domain_name, account["company_name"])
             c["cost"] += cost
         except RECOVERABLE as exc:
-            status = "enrichment_failed"  # still scored on postings alone; retried next run
             c["failed"] += 1
             log("enrich", "enrichment_failed", domain=domain_name, error=str(exc))
+            if is_quota(exc):
+                quota_hit = True
+                log("enrich", "LLM quota exhausted: stopping, remaining accounts stay pending")
+                continue
+            status = "enrichment_failed"  # still scored on postings alone; retried next run
+        if enrichment and enrichment.get("is_recruiting_agency"):
+            db.save_result(conn, domain_name, score=0, reasons=["excluded: recruiting or staffing agency"],
+                           status="excluded")
+            log("enrich", "excluded agency", domain=domain_name)
+            continue
         result = score.score_account(account, enrichment)
         segment = route.segment_for(enrichment["employee_band"]) if enrichment else None
         scored.append({**account, "enrichment": enrichment, "result": result, "segment": segment,
@@ -117,12 +140,16 @@ def run(conn, args, c: dict, state: dict) -> None:
 
     state["stage"] = "brief"
     for a in scored[: config.TOP_N_BRIEF]:  # briefs only for the accounts a rep will actually open
+        if quota_hit:
+            break
         try:
             a["brief"], cost = brief.make_brief(client, a, a["enrichment"], a["result"])
             c["cost"] += cost
         except RECOVERABLE as exc:
             c["failed"] += 1
             log("brief", "brief failed", domain=a["domain"], error=str(exc))
+            if is_quota(exc):
+                quota_hit = True
 
     state["stage"] = "crm"
     if not args.dry_run:
@@ -164,6 +191,7 @@ def run(conn, args, c: dict, state: dict) -> None:
 
 def main(argv=None) -> int:
     args = parse_args(argv)
+    llm.reset_budget()
     conn = db.connect(config.DB_PATH)
     run_id = db.start_run(conn)
     c = {"fetched": 0, "new_accounts": 0, "updated": 0, "failed": 0, "cost": 0.0}
