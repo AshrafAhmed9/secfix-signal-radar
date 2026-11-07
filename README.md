@@ -6,9 +6,9 @@ Every morning it finds companies in Germany, Austria and Switzerland that are hi
 
 I built it for Secfix's GTM Engineer role, as a small version of what the job describes: pull from several sources, dedupe, enrich, score, write back to the CRM, tell a rep who to call and why, and keep it running when something breaks.
 
-## Latest run (2026-11-07)
+## First runs (2026-11-07)
 
-Adzuna returned 1,462 postings for the ISO 27001 / TISAX / NIS2 / ISMS queries, and 610 of them have a security-role title, from 276 distinct companies. The free LLM tier limits how many I can read per day, so two capped runs handled the first ~18 companies: 8 are in HubSpot with a score, reasons, evidence links and (where quota allowed) a brief, and 6 were excluded as staffing agencies or job boards. The daily cron works through the rest.
+Adzuna returned 1,462 postings for the ISO 27001 / TISAX / NIS2 / ISMS queries, and 610 of them have a security-role title, from 276 distinct companies. The free LLM tier limits how many I can read per day, so the first two capped runs handled about 18 companies: 8 are in HubSpot with a score, reasons, evidence links and (where quota allowed) a brief, and 6 were excluded as staffing agencies or job boards. The daily cron works through the rest.
 
 | # | Company | Score | Why |
 |---|---|---|---|
@@ -103,6 +103,7 @@ Then `python -m radar.main` for the real run. Tests: `pytest` (all external APIs
 - The Bundesagentur source is opt-in (`RADAR_SOURCES=adzuna,arbeitsagentur`). Its API answers 403 from my laptop and from GitHub Actions, so it has never run end to end. I did not try to get around the block.
 - The LLM calls are tested with fakes. The first live run is the real test. I run it on a free tier (Gemini); the Claude API path exists (`LLM_PROVIDER=anthropic`) but I haven't run it live, so I don't claim it.
 - Job descriptions aren't read, only titles, so a security role titled something unusual is missed.
+- Most company sites don't state headcount, so the size band is often unknown. Those accounts get no SMB / Mid-Market segment and go to the default owner.
 - Contacts (CISO, Head of IT) are not created in HubSpot. That needs names from the company's own site, and I'd rather leave it empty than invent people.
 
 ## What I'd build next at Secfix
