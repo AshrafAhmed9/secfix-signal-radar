@@ -9,6 +9,12 @@ on:
         description: "Dry run (no HubSpot or Slack writes)"
         type: boolean
         default: false
+      limit:
+        description: "Max companies this run"
+        default: "15"
+      max_calls:
+        description: "Max LLM calls this run (free-tier guard)"
+        default: "30"
 
 concurrency:
   group: daily-radar
@@ -39,9 +45,10 @@ jobs:
           ADZUNA_APP_KEY: ${{ secrets.ADZUNA_APP_KEY }}
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
           LLM_MODEL: ${{ secrets.LLM_MODEL }}
+          LLM_MODEL_BRIEF: ${{ secrets.LLM_MODEL_BRIEF }}
           LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
           LLM_MIN_INTERVAL: "7"
-          LLM_MAX_CALLS: "30"   # free-tier daily quota guard
+          LLM_MAX_CALLS: ${{ inputs.max_calls || '30' }}   # free-tier daily quota guard
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           HUBSPOT_TOKEN: ${{ secrets.HUBSPOT_TOKEN }}
           HUBSPOT_PORTAL_ID: ${{ secrets.HUBSPOT_PORTAL_ID }}
@@ -50,4 +57,4 @@ jobs:
           OWNERS_SMB: ${{ secrets.OWNERS_SMB }}
           OWNERS_MID_MARKET: ${{ secrets.OWNERS_MID_MARKET }}
           OWNER_DEFAULT: ${{ secrets.OWNER_DEFAULT }}
-        run: python -m radar.main --limit 15 ${{ inputs.dry_run && '--dry-run' || '' }}
+        run: python -m radar.main --limit ${{ inputs.limit || 15 }} ${{ inputs.dry_run && '--dry-run' || '' }}
