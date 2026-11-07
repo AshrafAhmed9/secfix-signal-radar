@@ -1,5 +1,7 @@
 # secfix-signal-radar
 
+[![daily-radar](https://github.com/AshrafAhmed9/secfix-signal-radar/actions/workflows/daily.yml/badge.svg)](https://github.com/AshrafAhmed9/secfix-signal-radar/actions/workflows/daily.yml)
+
 Every morning it finds companies in Germany, Austria and Switzerland that are hiring for information-security roles, works out which ones are likely to need ISO 27001, TISAX or NIS2 help, puts them in HubSpot with a score and the reasons, and posts the top five to Slack for the reps.
 
 I built it for Secfix's GTM Engineer role, as a small version of what the job describes: pull from several sources, dedupe, enrich, score, write back to the CRM, tell a rep who to call and why, and keep it running when something breaks.
@@ -16,7 +18,7 @@ Adzuna returned 1,462 postings for the ISO 27001 / TISAX / NIS2 / ISMS queries, 
 | 4 | adesso SE (adesso.de) | 75 | +30 hiring for a security role; +20 likely NIS2-regulated (Digital infrastructure) |
 | 5 | Bundesdruckerei-Gruppe (bundesdruckerei.de) | 75 | +30 hiring for a security role; +20 likely NIS2-regulated (Digital infrastructure) |
 
-Not measured yet: precision of the top 10.
+Not measured yet: precision of the top 10. `python -m eval.precision make` writes the top accounts to `eval/labels.csv`; once each is labelled fit y/n by hand, `python -m eval.precision report` prints precision@5 and @10 and lists the misses.
 
 ## How it works
 
@@ -24,7 +26,7 @@ Not measured yet: precision of the top 10.
 flowchart LR
     A[Adzuna API] --> I[ingest: title filter, seen-postings check]
     B[Bundesagentur API, opt-in] --> I
-    I --> D[domain: LLM proposes, we verify the site]
+    I --> D[domain: free guess, LLM fallback, verify the site]
     D --> M[merge by domain, drop agencies]
     M --> E[enrich: read the site, LLM extracts JSON]
     E --> S[score: rules, every point has a reason]
@@ -38,7 +40,7 @@ flowchart LR
 ```
 
 1. **Ingest.** Postings for ISO 27001, TISAX, NIS2, ISMS and the German equivalents. The search also matches job descriptions, so a posting only counts if its *title* is a security role.
-2. **Domain.** Company names are messy, so the domain is the key. An LLM proposes one, then we fetch the site and check it mentions the company before trusting it. If it doesn't check out, the company is skipped, not guessed.
+2. **Domain.** Company names are messy, so the domain is the key. We first try free guesses from the name (`firma.de`, `firma.com`), and only ask the LLM if none check out. Either way we fetch the site and check it mentions the company before trusting it. If it doesn't check out, the company is skipped, not guessed.
 3. **Enrich.** We read the homepage and `/security`, `/trust`, `/sicherheit` (respecting robots.txt), and the LLM returns a fixed JSON shape: industry, size band, automotive supplier, sells B2B, certifications it already holds, NIS2 sector, and a quote as evidence. Cached by domain.
 4. **Score.** Plain rules, weights in one dict in [`radar/config.py`](radar/config.py). A rep can see why an account scored what it did.
 5. **Write back and alert.** Upsert into HubSpot (search by domain first, so no duplicates), then a Slack digest grouped by segment.
