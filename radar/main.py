@@ -15,7 +15,7 @@ from radar.normalize import looks_like_agency, merge_by_domain, normalize_name
 
 # Failures of one account or one call must never crash the whole run.
 RECOVERABLE = (http.RequestFailed, enrich.EnrichmentFailed, anthropic.APIError,
-               llm.LLMRefused, json.JSONDecodeError)
+               llm.LLMRefused, llm.LLMBadOutput, json.JSONDecodeError)
 
 
 def parse_args(argv=None) -> argparse.Namespace:
@@ -30,10 +30,10 @@ def parse_args(argv=None) -> argparse.Namespace:
 def require_keys(args) -> None:
     needed = [("ADZUNA_APP_ID", config.ADZUNA_APP_ID if "adzuna" in config.SOURCES else "x")]
     if args.stage == "all":
-        needed.append(("ANTHROPIC_API_KEY", config.ANTHROPIC_API_KEY))
-        if not args.dry_run:
-            needed.append(("HUBSPOT_TOKEN", config.HUBSPOT_TOKEN))
+        needed.append(("HUBSPOT_TOKEN", config.HUBSPOT_TOKEN) if not args.dry_run else ("", "x"))
     missing = [name for name, value in needed if not value]
+    if args.stage == "all":
+        missing += llm.missing_settings()
     if missing:
         raise RuntimeError("missing settings: " + ", ".join(missing) + " (see .env.example)")
 
@@ -72,7 +72,7 @@ def run(conn, args, c: dict, state: dict) -> None:
     for normalized, plist in companies:
         try:
             found, cost = domain.resolve_domain(conn, client, plist[0]["company_name"],
-                                                plist[0]["location"], config.MODEL_EXTRACT)
+                                                plist[0]["location"], config.model_for("extract"))
         except RECOVERABLE as exc:
             errored.add(normalized)  # not marked seen, so tomorrow retries it
             c["failed"] += 1

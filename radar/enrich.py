@@ -107,7 +107,7 @@ def enrich(conn, client, domain: str, company_name: str) -> tuple[dict, float]:
         return cached, 0.0
     text, raw_html = fetch_site(domain)
     result, cost = llm.ask_json(
-        client, config.MODEL_EXTRACT, SYSTEM,
+        client, config.model_for("extract"), SYSTEM,
         f"Company: {company_name}\nWebsite: {domain}\n\n<website_text>\n{text}\n</website_text>",
         SCHEMA)
     competitors = find_competitors(raw_html)

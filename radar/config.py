@@ -33,7 +33,7 @@ TOP_N_ALERT = 5
 TOP_N_BRIEF = 5
 
 # Cheap model for extraction, stronger one only for briefs (cost control).
-MODEL_EXTRACT = "claude-haiku-5-5"
+MODEL_EXTRACT = "claude-haiku-5-5"  # only used when LLM_PROVIDER=anthropic
 MODEL_BRIEF = "claude-sonnet-5-5"
 
 # One dict so the rules are easy to tune. Every point must come with a reason string.
@@ -85,3 +85,22 @@ PRICES = {
     "claude-haiku-5-5": (0.10, 0.50),
     "claude-sonnet-5-5": (2.00, 10.00),
 }
+
+# --- LLM provider ---------------------------------------------------------------------
+# "openai_compat" works with any OpenAI-style /chat/completions endpoint: Gemini's free tier,
+# Groq, OpenRouter, or a local Ollama. "anthropic" uses the Claude API. If unset, Claude is
+# used when ANTHROPIC_API_KEY exists, otherwise openai_compat.
+LLM_PROVIDER = env("LLM_PROVIDER") or ("anthropic" if ANTHROPIC_API_KEY else "openai_compat")
+LLM_BASE_URL = env("LLM_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai").rstrip("/")
+LLM_API_KEY = env("LLM_API_KEY")
+LLM_MODEL = env("LLM_MODEL")
+LLM_MODEL_BRIEF = env("LLM_MODEL_BRIEF")  # optional stronger model for briefs
+# Free tiers allow only a few requests per minute. Seconds to wait between LLM calls.
+LLM_MIN_INTERVAL = float(env("LLM_MIN_INTERVAL", "0"))
+
+
+def model_for(role: str) -> str:
+    """role is "extract" or "brief"."""
+    if LLM_PROVIDER == "anthropic":
+        return MODEL_BRIEF if role == "brief" else MODEL_EXTRACT
+    return (LLM_MODEL_BRIEF or LLM_MODEL) if role == "brief" else LLM_MODEL

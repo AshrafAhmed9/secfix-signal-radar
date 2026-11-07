@@ -17,6 +17,7 @@ def env(tmp_path, monkeypatch):
     rec = {"slack": [], "errors": [], "upserts": []}
     monkeypatch.setattr(config, "DB_PATH", str(tmp_path / "t.db"))
     monkeypatch.setattr(config, "ADZUNA_APP_ID", "id")
+    monkeypatch.setattr(config, "LLM_PROVIDER", "anthropic")
     monkeypatch.setattr(config, "ANTHROPIC_API_KEY", "k")
     monkeypatch.setattr(config, "HUBSPOT_TOKEN", "t")
     monkeypatch.setattr(config, "SLACK_DIGEST_WEBHOOK", "https://hooks/digest")

@@ -35,7 +35,7 @@ def make_brief(client, account: dict, enrichment: dict | None, result: dict) -> 
         f"already certified: {facts.get('already_certified', 'unknown')}; NIS2 sector: {facts.get('nis2_sector', 'unknown')}\n"
         f"Why it scored {result['score']}: {'; '.join(result['reasons'])}"
     )
-    data, cost = llm.ask_json(client, config.MODEL_BRIEF, SYSTEM, prompt, SCHEMA, max_tokens=4000)
+    data, cost = llm.ask_json(client, config.model_for("brief"), SYSTEM, prompt, SCHEMA, max_tokens=4000)
     evidence = ", ".join(s["url"] for s in account["signals"][:3] if s["url"])
     text = "\n".join([
         f"- Why now: {data['why_now']}",
