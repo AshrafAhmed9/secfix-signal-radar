@@ -57,7 +57,7 @@ def test_name_in_page_requires_the_first_word():
 
 def test_resolve_accepts_a_verified_domain_and_caches_a_miss(tmp_path, monkeypatch):
     conn = db.connect(str(tmp_path / "t.db"))
-    monkeypatch.setattr(domain, "verify", lambda d, n, strict=False: not strict)  # guesses fail, LLM answer passes
+    monkeypatch.setattr(domain, "verify", lambda d, n, strict=False: None if strict else d)  # guesses fail, the LLM answer passes
     monkeypatch.setattr(domain.llm, "ask_json", lambda *a, **k: ({"domain": "https://www.Acme.de/home"}, 0.001))
     found, _ = domain.resolve_domain(conn, None, "Acme GmbH", "Berlin", "m")
     assert found == "acme.de"
@@ -70,11 +70,11 @@ def test_resolve_accepts_a_verified_domain_and_caches_a_miss(tmp_path, monkeypat
 
 def test_resolve_rejects_job_boards_and_unverified_guesses(tmp_path, monkeypatch):
     conn = db.connect(str(tmp_path / "t.db"))
-    monkeypatch.setattr(domain, "verify", lambda d, n, strict=False: True)
+    monkeypatch.setattr(domain, "verify", lambda d, n, strict=False: d)
     monkeypatch.setattr(domain, "guess_candidates", lambda n: [])
     monkeypatch.setattr(domain.llm, "ask_json", lambda *a, **k: ({"domain": "linkedin.com"}, 0.0))
     assert domain.resolve_domain(conn, None, "Acme GmbH", "", "m")[0] is None
-    monkeypatch.setattr(domain, "verify", lambda d, n, strict=False: False)
+    monkeypatch.setattr(domain, "verify", lambda d, n, strict=False: None)
     monkeypatch.setattr(domain.llm, "ask_json", lambda *a, **k: ({"domain": "wrong-site.de"}, 0.0))
     assert domain.resolve_domain(conn, None, "Beta AG", "", "m")[0] is None
 
@@ -89,7 +89,7 @@ def test_guess_candidates():
 
 def test_a_verified_guess_resolves_without_any_llm_call(tmp_path, monkeypatch):
     conn = db.connect(str(tmp_path / "t.db"))
-    monkeypatch.setattr(domain, "verify", lambda d, n, strict=False: d == "acme.de" and strict)
+    monkeypatch.setattr(domain, "verify", lambda d, n, strict=False: d if (d == "acme.de" and strict) else None)
     monkeypatch.setattr(domain.llm, "ask_json", lambda *a, **k: pytest.fail("must not call the LLM"))
     assert domain.resolve_domain(conn, None, "Acme GmbH", "Berlin", "m") == ("acme.de", 0.0)
 
@@ -98,3 +98,31 @@ def test_strict_name_match_needs_every_word():
     assert domain.name_in_page("schwarz digits", "Schwarz Digits GmbH", strict=True)
     assert not domain.name_in_page("schwarz digits", "Schwarz Shop", strict=True)
     assert domain.name_in_page("schwarz digits", "Schwarz Shop")  # lenient: first word is enough
+
+
+class _Page:
+    def __init__(self, url, text):
+        self.url, self.text = url, text
+
+
+def test_verify_returns_the_canonical_domain_after_redirects(monkeypatch):
+    monkeypatch.setattr(http, "request", lambda *a, **k: _Page("https://www.schwarz-digits.de/en", "Schwarz Digits GmbH"))
+    assert domain.verify("schwarzdigits.com", "schwarz digits", strict=True) == "schwarz-digits.de"
+
+
+def test_verify_rejects_pages_that_do_not_name_the_company_or_fail(monkeypatch):
+    monkeypatch.setattr(http, "request", lambda *a, **k: _Page("https://x.de/", "Domain for sale"))
+    assert domain.verify("x.de", "acme") is None
+
+    def down(*a, **k):
+        raise http.RequestFailed("x", 500)
+
+    monkeypatch.setattr(http, "request", down)
+    assert domain.verify("x.de", "acme") is None
+
+
+def test_two_spellings_that_redirect_to_one_site_become_one_domain(tmp_path, monkeypatch):
+    conn = db.connect(str(tmp_path / "t.db"))
+    monkeypatch.setattr(domain, "verify", lambda d, n, strict=False: "schwarz-digits.de")
+    monkeypatch.setattr(domain.llm, "ask_json", lambda *a, **k: pytest.fail("guess should have worked"))
+    assert domain.resolve_domain(conn, None, "Schwarz Digits", "", "m")[0] == "schwarz-digits.de"

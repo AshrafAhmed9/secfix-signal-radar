@@ -56,8 +56,8 @@ SEGMENT_BY_BAND = {"20-49": "SMB", "50-249": "SMB", "250-999": "Mid-Market"}
 
 COMPETITORS = ["vanta", "drata", "secureframe", "sprinto", "dataguard", "kertos", "safebase"]
 
-# Sources to pull from. If one is blocked from your network, set RADAR_SOURCES=adzuna.
-SOURCES = [x.strip() for x in env("RADAR_SOURCES", "adzuna,arbeitsagentur").split(",") if x.strip()]
+# Sources to pull from. "arbeitsagentur" is opt-in: its API answers 403 from my laptop and from GitHub Actions.
+SOURCES = [x.strip() for x in env("RADAR_SOURCES", "adzuna").split(",") if x.strip()]
 
 # Words that must appear in a posting title for it to count as a security signal.
 # The search also matches the job description, so without this a software job that merely

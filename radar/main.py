@@ -151,6 +151,10 @@ def run(conn, args, c: dict, state: dict) -> None:
             if is_quota(exc):
                 quota_hit = True
 
+    for a in scored[: config.TOP_N_BRIEF]:
+        if a["brief"] is None and a["status"] == "synced":
+            a["status"] = "pending"  # no brief yet (quota or error): retry next run, enrichment is cached
+
     state["stage"] = "crm"
     if not args.dry_run:
         crm.ensure_properties(config.HUBSPOT_TOKEN)

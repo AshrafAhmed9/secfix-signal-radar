@@ -143,3 +143,18 @@ def test_llm_quota_stops_the_run_cleanly_and_leaves_accounts_pending(env, monkey
     assert last_run(tmp_path)["failed"] == 1  # one failure, not one per account
     conn = db.connect(str(tmp_path / "t.db"))
     assert db.pending_domains(conn) == ["acme.de"]  # tomorrow picks it up
+
+
+def test_top_account_without_a_brief_is_retried_next_run(env, monkeypatch, tmp_path):
+    def no_brief(*a, **k):
+        raise http.RequestFailed("quota", 429)
+
+    monkeypatch.setattr(main.brief, "make_brief", no_brief)
+    assert main.main([]) == 0
+    assert len(env["upserts"]) == 1  # still synced to HubSpot, just without a brief
+    conn = db.connect(str(tmp_path / "t.db"))
+    assert db.pending_domains(conn) == ["acme.de"]
+    monkeypatch.setattr(main.brief, "make_brief", lambda *a, **k: ("- Why now: x", 0.0))
+    assert main.main([]) == 0
+    assert env["upserts"][-1][3] == "- Why now: x"  # second run supplies the brief
+    assert db.pending_domains(conn) == []

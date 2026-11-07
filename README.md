@@ -6,24 +6,24 @@ I built it for Secfix's GTM Engineer role, as a small version of what the job de
 
 ## Latest run (2026-11-07)
 
-Adzuna returned 1,462 postings for the ISO 27001 / TISAX / NIS2 / ISMS queries. 611 of them have a security-role title, from 276 distinct companies once obvious recruiters are dropped. The free LLM tier limits how many companies I can enrich per day, so the first run handled 5 and put them in HubSpot with a score, the reasons, evidence links and a brief; the daily cron works through the rest.
+Adzuna returned 1,462 postings for the ISO 27001 / TISAX / NIS2 / ISMS queries, and 610 of them have a security-role title, from 276 distinct companies. The free LLM tier limits how many I can read per day, so two capped runs handled the first ~18 companies: 8 are in HubSpot with a score, reasons, evidence links and (where quota allowed) a brief, and 6 were excluded as staffing agencies or job boards. The daily cron works through the rest.
 
 | # | Company | Score | Why |
 |---|---|---|---|
 | 1 | SAF-HOLLAND GmbH (safholland.com) | 100 | +30 hiring for a security role; +25 automotive supplier (TISAX need) |
-| 2 | Schwarz Digits (schwarz-digits.com) | 75 | +30 hiring for a security role; +20 likely NIS2-regulated (Digital infrastructure) |
-| 3 | adesso SE (adesso-group.de) | 75 | +30 hiring for a security role; +20 likely NIS2-regulated (Digital infrastructure) |
-| 4 | Bundesdruckerei-Gruppe (bundesdruckerei.de) | 75 | +30 hiring for a security role; +20 likely NIS2-regulated (Digital infrastructure) |
-| 5 | Korian Deutschland GmbH (korian.de) | 40 | +30 hiring for a security role; +10 six postings |
+| 2 | Schwarz Digits (schwarz-digits.de) | 75 | +30 hiring for a security role; +20 likely NIS2-regulated (Digital infrastructure) |
+| 3 | cbs Corporate Business Solutions (cbs-consulting.com) | 75 | +30 hiring for a security role; +20 likely NIS2-regulated (Digital infrastructure) |
+| 4 | adesso SE (adesso.de) | 75 | +30 hiring for a security role; +20 likely NIS2-regulated (Digital infrastructure) |
+| 5 | Bundesdruckerei-Gruppe (bundesdruckerei.de) | 75 | +30 hiring for a security role; +20 likely NIS2-regulated (Digital infrastructure) |
 
-Not measured yet: precision of the top 10, and the Bundesagentur source (see Known gaps).
+Not measured yet: precision of the top 10.
 
 ## How it works
 
 ```mermaid
 flowchart LR
     A[Adzuna API] --> I[ingest: title filter, seen-postings check]
-    B[Bundesagentur API] --> I
+    B[Bundesagentur API, opt-in] --> I
     I --> D[domain: LLM proposes, we verify the site]
     D --> M[merge by domain, drop agencies]
     M --> E[enrich: read the site, LLM extracts JSON]
@@ -47,7 +47,8 @@ flowchart LR
 
 - **The LLM researches, reps write.** There is no AI-written outreach anywhere. The brief gives a rep the why-now, likely pain, framework, which role to approach and links to the evidence. The rep writes the message. Secfix's Head of GTM has written publicly that human-written outreach is what stands out now, and I agree.
 - **Rules, not a model.** With a few days of data there is nothing to train on, and a score a rep can't explain doesn't get used.
-- **Domain as primary key, and never guess.** A wrong match puts a rep on the wrong company. An unresolved one just doesn't show up.
+- **Domain as primary key, and never guess.** A wrong match puts a rep on the wrong company. An unresolved one just doesn't show up. The key is the site's final domain after redirects: my first cloud run made two HubSpot records for one company (`schwarzdigits.com` and `schwarz-digits.com`, both redirecting to `schwarz-digits.de`), so now they collapse into one.
+- **Staffing agencies are caught by reading the site, not only the name.** Names like "Amadeus Fire" don't contain "personal" or "recruiting".
 - **Only accounts with a new posting get alerted.** Reps see what changed, not the same list every morning.
 - **Sequential, no async.** Volume is a few hundred postings. See "What breaks at 10x".
 
@@ -62,7 +63,7 @@ flowchart LR
 | Alerts | If a stage crashes, or any step failed, a message goes to a separate Slack channel with the stage and run id. |
 | Logs | One JSON line per event, with the stage name. |
 | Schedule | GitHub Actions, daily 06:00 UTC (07:00 CET), plus manual trigger. The SQLite file is carried between runs with the Actions cache. |
-| Cost | Cheap model for extraction, a stronger one only for the top 5 briefs, everything cached, `--limit` caps a run. |
+| Cost and free-tier limits | Runs on a free LLM tier. `LLM_MAX_CALLS` caps calls per run, a quota error (429) stops the run cleanly and the remaining accounts stay pending for tomorrow, everything is cached, and the domain is guessed for free before any LLM call. |
 | Secrets | `.env` locally, GitHub Secrets in CI. |
 
 ## What this covers from the job description
@@ -97,7 +98,7 @@ Then `python -m radar.main` for the real run. Tests: `pytest` (all external APIs
 
 ## Known gaps
 
-- The Bundesagentur source follows the public API docs but has not been checked against a live response yet. If it fails, set `RADAR_SOURCES=adzuna`.
+- The Bundesagentur source is opt-in (`RADAR_SOURCES=adzuna,arbeitsagentur`). Its API answers 403 from my laptop and from GitHub Actions, so it has never run end to end. I did not try to get around the block.
 - The LLM calls are tested with fakes. The first live run is the real test. I run it on a free tier (Gemini); the Claude API path exists (`LLM_PROVIDER=anthropic`) but I haven't run it live, so I don't claim it.
 - Job descriptions aren't read, only titles, so a security role titled something unusual is missed.
 - Contacts (CISO, Head of IT) are not created in HubSpot. That needs names from the company's own site, and I'd rather leave it empty than invent people.

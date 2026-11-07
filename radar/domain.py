@@ -1,5 +1,6 @@
 """Find a company's website domain, and verify it before trusting it."""
 import re
+from urllib.parse import urlparse
 
 from radar import db, http, llm
 from radar.log import log
@@ -40,13 +41,21 @@ def guess_candidates(normalized_name: str) -> list[str]:
     return [f"{base}.{tld}" for base in bases for tld in ("de", "com")]
 
 
-def verify(domain: str, normalized_name: str, strict: bool = False) -> bool:
+def verify(domain: str, normalized_name: str, strict: bool = False) -> str | None:
+    """Fetch the site. Returns its canonical domain (after redirects) if the page names the company.
+
+    The canonical domain is the key, so "schwarzdigits.com" and "schwarz-digits.com", which both
+    redirect to schwarz-digits.de, end up as ONE account instead of two CRM records.
+    """
     try:
         response = http.request("GET", f"https://{domain}", max_attempts=2, timeout=8.0,
                                 headers={"User-Agent": "secfix-signal-radar/0.1"})
     except http.RequestFailed:
-        return False
-    return name_in_page(normalized_name, response.text, strict)
+        return None
+    if not name_in_page(normalized_name, response.text, strict):
+        return None
+    final = clean_domain(urlparse(response.url).netloc.split(":")[0])
+    return final or domain
 
 
 def resolve_domain(conn, client, company_name: str, location: str, model: str) -> tuple[str | None, float]:
@@ -56,10 +65,11 @@ def resolve_domain(conn, client, company_name: str, location: str, model: str) -
     if cached:
         return domain, 0.0
     for candidate in guess_candidates(normalized):  # free check first
-        if verify(candidate, normalized, strict=True):
-            db.put_cached_domain(conn, normalized, candidate)
-            log("domain", "resolved", company=company_name, domain=candidate, how="guess")
-            return candidate, 0.0
+        canonical = verify(candidate, normalized, strict=True)
+        if canonical and not any(w in canonical for w in NOT_A_COMPANY_SITE):
+            db.put_cached_domain(conn, normalized, canonical)
+            log("domain", "resolved", company=company_name, domain=canonical, how="guess")
+            return canonical, 0.0
     guess, cost = llm.ask_json(
         client, model,
         system="You give the official website domain of a company. Answer null when you are not sure; "
@@ -69,8 +79,10 @@ def resolve_domain(conn, client, company_name: str, location: str, model: str) -
         schema=SCHEMA, max_tokens=1500)
     candidate = re.sub(r"^https?://", "", (guess.get("domain") or "").strip().lower()).split("/")[0]
     candidate = clean_domain(candidate)  # after the scheme is gone, so "https://www.x.de" loses its www too
-    ok = bool(candidate) and "." in candidate and not any(w in candidate for w in NOT_A_COMPANY_SITE) \
-        and verify(candidate, normalized)
-    db.put_cached_domain(conn, normalized, candidate if ok else None)
-    log("domain", "resolved" if ok else "unresolved", company=company_name, domain=candidate or None)
-    return (candidate if ok else None), cost
+    plausible = "." in candidate and not any(w in candidate for w in NOT_A_COMPANY_SITE)
+    canonical = verify(candidate, normalized) if plausible else None
+    if canonical and any(w in canonical for w in NOT_A_COMPANY_SITE):
+        canonical = None
+    db.put_cached_domain(conn, normalized, canonical)
+    log("domain", "resolved" if canonical else "unresolved", company=company_name, domain=canonical or candidate or None)
+    return canonical, cost
