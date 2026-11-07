@@ -18,7 +18,7 @@ SLACK_DIGEST_WEBHOOK = env("SLACK_DIGEST_WEBHOOK")
 SLACK_ERROR_WEBHOOK = env("SLACK_ERROR_WEBHOOK")
 DB_PATH = env("RADAR_DB_PATH", "radar.db")
 
-COUNTRIES = ["de", "at"]  # add "ch" if Adzuna supports it for this account
+COUNTRIES = ["de", "at", "ch"]
 QUERIES = [
     "ISO 27001",
     "Informationssicherheit",
@@ -31,7 +31,6 @@ QUERIES = [
 MAX_PAGES = 3
 TOP_N_ALERT = 5
 TOP_N_BRIEF = 5
-ALERT_COOLDOWN_DAYS = 14
 
 # Cheap model for extraction, stronger one only for briefs (cost control).
 MODEL_EXTRACT = "claude-haiku-5-5"
@@ -56,3 +55,33 @@ BANDS_50_PLUS = ("50-249", "250-999", "1000+")
 SEGMENT_BY_BAND = {"20-49": "SMB", "50-249": "SMB", "250-999": "Mid-Market"}
 
 COMPETITORS = ["vanta", "drata", "secureframe", "sprinto", "dataguard", "kertos", "safebase"]
+
+# Sources to pull from. If one is blocked from your network, set RADAR_SOURCES=adzuna.
+SOURCES = [x.strip() for x in env("RADAR_SOURCES", "adzuna,arbeitsagentur").split(",") if x.strip()]
+
+# Words that must appear in a posting title for it to count as a security signal.
+# The search also matches the job description, so without this a software job that merely
+# mentions ISO 27001 would count as a buying signal.
+SECURITY_TITLE_WORDS = (
+    "sicherheit", "security", "isms", "iso 27001", "iso27001", "tisax", "nis2", "ciso",
+    "grc", "compliance", "datenschutz", "cyber", "risk", "risiko",
+)
+
+HUBSPOT_PORTAL_ID = env("HUBSPOT_PORTAL_ID")
+
+
+def owner_ids(name: str) -> list[str]:
+    return [x.strip() for x in env(name).split(",") if x.strip()]
+
+
+OWNERS = {"SMB": owner_ids("OWNERS_SMB"), "Mid-Market": owner_ids("OWNERS_MID_MARKET")}
+OWNER_DEFAULT = env("OWNER_DEFAULT")
+
+# Generic client name, no personal contact details.
+USER_AGENT = "secfix-signal-radar/0.1 (+https://github.com/AshrafAhmed9/secfix-signal-radar)"
+
+# USD per 1M tokens (input, output), only for the cost estimate in the run log.
+PRICES = {
+    "claude-haiku-5-5": (0.10, 0.50),
+    "claude-sonnet-5-5": (2.00, 10.00),
+}

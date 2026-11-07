@@ -87,3 +87,11 @@ def test_build_properties_formats_values_for_hubspot():
 def test_build_properties_keeps_an_explicit_empty_brief_out_of_the_way():
     assert "account_brief" not in crm.build_properties(ACCOUNT, RESULT)
     assert crm.build_properties(ACCOUNT, RESULT, brief="x")["account_brief"] == "x"
+
+
+def test_ensure_properties_creates_only_the_missing_ones(monkeypatch):
+    have = [{"name": n} for n in ("signal_score", "signal_reasons")]
+    calls = script(monkeypatch, [FakeResponse(200, {"results": have})] + [FakeResponse(201, {})] * 3)
+    created = crm.ensure_properties("tok")
+    assert created == ["last_signal_date", "account_brief", "secfix_segment"]
+    assert [c["method"] for c in calls] == ["GET", "POST", "POST", "POST"]
